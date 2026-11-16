@@ -13,6 +13,7 @@ from modules.knn import get_knn_recommendations
 from modules.kmeans import run_kmeans  
 from modules.decision_tree import build_tree, predict  
 from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH
+from modules.live_api import fetch_jsearch_jobs, map_live_to_local_format # Naya Import
 
 # Page configuration
 st.set_page_config(page_title="CareerLens", page_icon="📊", layout="wide")
@@ -123,8 +124,10 @@ if 'data' not in st.session_state:
 with st.sidebar:
     st.title("CareerLens")
     st.markdown("<p style='color: #a0a0a0; margin-top:-15px; font-size:14px;'>Job Market Intelligence</p>", unsafe_allow_html=True)
+    
+    # Naya "Live Job Feed" option add kiya gaya hai
     menu = st.radio("Navigation", 
-        ["Market Overview", "Salary & Outliers", "KNN Recommendations", "K-Means Clustering", "Decision Tree", "Career Path Finder"],
+        ["Market Overview", "Salary & Outliers", "KNN Recommendations", "K-Means Clustering", "Decision Tree", "Career Path Finder", "Live Job Feed"],
         label_visibility="collapsed")
     
     st.markdown("---")
@@ -139,10 +142,12 @@ with st.sidebar:
 
 st.title(menu)
 
-if st.session_state.data is None:
+if st.session_state.data is None and menu != "Live Job Feed":
     st.info("👈 Please click 'Load Dataset' in the sidebar to start.")
 else:
-    df = st.session_state.data
+    # Agar Live Job Feed select nahi hai tabhi data load karein
+    if menu != "Live Job Feed":
+        df = st.session_state.data
 
     # ==========================================
     # 1. MARKET OVERVIEW
@@ -250,7 +255,6 @@ else:
                 st.dataframe(display_df, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Mocking prediction box based on neighbors
                 st.markdown('<div class="chart-box"><h4>Predicted level (majority vote)</h4>', unsafe_allow_html=True)
                 st.markdown(f"<h2 style='color:#00796b; margin-bottom:0;'>Mid-level</h2>", unsafe_allow_html=True)
                 st.markdown(f"<p style='color:gray; font-size:14px;'>{k_value} neighbours · features min-max scaled · Euclidean distance</p>", unsafe_allow_html=True)
@@ -264,7 +268,7 @@ else:
         
         col1, col2, col3, col4 = st.columns(4)
         with col1: st.text_input("Feature X", "salary", disabled=True)
-        with col2: st.text_input("Feature Y", "job_index", disabled=True) # Adjusted for 1D data
+        with col2: st.text_input("Feature Y", "job_index", disabled=True)
         with col3: k_clusters = st.number_input("K (clusters)", min_value=2, max_value=8, value=3)
         with col4: st.text_input("Max iterations", "100", disabled=True)
         
@@ -368,10 +372,8 @@ else:
             fig, ax = plt.subplots(figsize=(10, 4))
             fig.patch.set_facecolor('white')
             
-            # Better layout to avoid text clipping
             pos = nx.spring_layout(G, k=1.5, seed=42)
             
-            # Draw nodes larger
             nx.draw_networkx_nodes(G, pos, node_size=8000, node_color='#00796b', ax=ax)
             nx.draw_networkx_labels(G, pos, font_color='white', font_size=9, font_weight='bold', ax=ax)
             nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20, edge_color='#9ca3af', width=2, ax=ax)
@@ -393,3 +395,59 @@ else:
             })
             st.dataframe(algo_df, hide_index=True, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+
+    # ==========================================
+    # 7. LIVE JOB FEED (Naya Page)
+    # ==========================================
+    elif menu == "Live Job Feed":
+        st.header("🔴 Live Job Market Feed")
+        st.markdown("<p style='color: #6b7280; font-size: 16px; margin-top: -10px;'>Fetch real-time jobs directly from LinkedIn/Indeed using JSearch API.</p><br>", unsafe_allow_html=True)
+        
+        # API Inputs
+        col1, col2, col3 = st.columns(3)
+        with col1: 
+            # Security ke liye type="password" use kiya hai. Apni key yahan daalein.
+            rapidapi_key = st.text_input("RapidAPI Key", type="password", value="e8856e1a1cmsh7114718c35df35ep1786d6jsnb5fce9ef938a")
+        with col2: 
+            query = st.text_input("Job Title", "Data Scientist")
+        with col3: 
+            location = st.text_input("Location", "US")
+            
+        if st.button("Fetch Live Jobs"):
+            if rapidapi_key:
+                with st.spinner("Fetching live jobs from API... (Thoda time lag sakta hai)"):
+                    raw_df = fetch_jsearch_jobs(rapidapi_key, query, location)
+                    
+                    if raw_df is not None:
+                        st.success(f"Successfully fetched {len(raw_df)} live jobs!")
+                        
+                        # 1. Raw API Data
+                        st.markdown('<div class="chart-box"><h4>Raw API Data (Sample)</h4>', unsafe_allow_html=True)
+                        st.dataframe(raw_df[['job_title', 'employer_name', 'job_city', 'job_min_salary', 'job_max_salary']].head(10), use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # 2. Data Cleaning
+                        mapped_df = map_live_to_local_format(raw_df)
+                        
+                        if not mapped_df.empty:
+                            st.markdown('<div class="chart-box"><h4>Cleaned Data (Ready for ML Models)</h4>', unsafe_allow_html=True)
+                            st.dataframe(mapped_df.head(10), use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Download Button
+                            csv = mapped_df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Download Live Data as CSV",
+                                data=csv,
+                                file_name=f"live_{query.replace(' ', '_')}.csv",
+                                mime="text/csv",
+                            )
+                            
+                            # Note for User
+                            st.info("💡 Note: Aap is live data ko CSV mein download karke apne 'data' folder mein daal sakte hain taake KNN aur Decision Tree is par kaam kar sakein.")
+                        else:
+                            st.warning("Live jobs mili, lekin unmein salary ki information nahi thi (ya data clean nahi ho paya).")
+                    else:
+                        st.error("Data fetch nahi ho paya. Please check your API key limit or query.")
+            else:
+                st.warning("Please enter your RapidAPI Key.")
