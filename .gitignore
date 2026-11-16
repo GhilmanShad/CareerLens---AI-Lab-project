@@ -1,0 +1,10 @@
+# Ignore heavy datasets
+archive/
+data/
+*.csv
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+.env
+venv/
