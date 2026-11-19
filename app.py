@@ -233,19 +233,49 @@ else:
         col_input1, col_input2, col_input3, col_input4 = st.columns(4)
         with col_input1: st.text_input("Salary field", "salary", disabled=True)
         with col_input2: st.text_input("Method", "Z-score + IQR", disabled=True)
-        with col_input3: z_thresh = st.number_input("Z threshold", value=3.0, step=0.5)
+        with col_input3: z_thresh = st.number_input(
+    "Z threshold", min_value=0.5, value=3.0, step=0.5
+)
         with col_input4: st.text_input("Currency / unit", "USD / year", disabled=True)
         
         if st.button("Run Analysis"):
             outliers_z, count_z = detect_zscore_outliers(df, threshold=z_thresh)
             outliers_iqr, stats_iqr = detect_iqr_outliers(df)
-            
+            col_metric1, col_metric2, col_metric3 = st.columns(3)
+
+            with col_metric1:
+                st.metric("Valid Salary Records", df["salary"].notna().sum())
+
+            with col_metric2:
+                st.metric("Z-score Outliers", count_z)
+
+            with col_metric3:
+                st.metric("IQR Outliers", len(outliers_iqr))
+
             col_chart1, col_chart2 = st.columns([1.5, 1])
             with col_chart1:
                 st.markdown('<div class="chart-box"><h4>Salary distribution</h4>', unsafe_allow_html=True)
                 fig, ax = plt.subplots(figsize=(8, 4))
                 fig.patch.set_facecolor('white')
-                ax.hist(df['salary'], bins=30, color='#00796b', edgecolor='white')
+
+                valid_salaries = pd.to_numeric(df['salary'], errors='coerce')
+                valid_salaries = valid_salaries[
+                    np.isfinite(valid_salaries) & (valid_salaries > 0)
+                ]
+
+                # Limit the visualization to the 99th percentile
+                # Outlier detection still uses all valid salaries
+                salary_limit = valid_salaries.quantile(0.99)
+                display_salaries = valid_salaries[
+                    valid_salaries <= salary_limit
+                ]
+
+                ax.hist(
+                    display_salaries,
+                    bins=30,
+                    color='#00796b',
+                    edgecolor='white'
+                )
                 ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
                 ax.tick_params(colors='#374151')
                 ax.set_xlabel("Salary (USD / year)", color='#374151')
@@ -262,12 +292,38 @@ else:
                 st.dataframe(q_df, hide_index=True, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-            st.markdown('<div class="chart-box"><h4>Flagged records (review, do not auto-delete)</h4>', unsafe_allow_html=True)
+            st.markdown("#### Z-score Outliers")
+
             if not outliers_z.empty:
-                st.dataframe(outliers_z[['job_title', 'salary', 'z_score']].head(5).rename(columns={'job_title':'Job', 'salary':'Salary', 'z_score':'Z-score'}), use_container_width=True)
+                st.dataframe(
+                    outliers_z[['job_title', 'salary', 'z_score']]
+                    .head(10)
+                    .rename(columns={
+                        'job_title': 'Job',
+                        'salary': 'Salary',
+                        'z_score': 'Z-score'
+                    }),
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
-                st.success("No flagged records found.")
-            st.markdown('</div>', unsafe_allow_html=True)
+                st.success("No Z-score outliers detected.")
+
+            st.markdown("#### IQR Outliers")
+
+            if not outliers_iqr.empty:
+                st.dataframe(
+                    outliers_iqr[['job_title', 'salary']]
+                    .head(10)
+                    .rename(columns={
+                        'job_title': 'Job',
+                        'salary': 'Salary'
+                    }),
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.success("No IQR outliers detected.")
 
     # ==========================================
     # 3. KNN RECOMMENDATIONS
