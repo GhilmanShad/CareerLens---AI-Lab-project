@@ -407,7 +407,7 @@ else:
         col1, col2, col3 = st.columns(3)
         with col1: 
             # Security ke liye type="password" use kiya hai. Apni key yahan daalein.
-            rapidapi_key = st.text_input("RapidAPI Key", type="password", value="e8856e1a1cmsh7114718c35df35ep1786d6jsnb5fce9ef938a")
+            rapidapi_key = st.text_input("RapidAPI Key", type="password")
         with col2: 
             query = st.text_input("Job Title", "Data Scientist")
         with col3: 
