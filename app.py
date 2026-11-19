@@ -11,7 +11,8 @@ from modules.preprocessing import clean_data
 from modules.outlier_detection import detect_zscore_outliers, detect_iqr_outliers
 from modules.knn import get_knn_recommendations, predict_job_level
 from modules.kmeans import run_kmeans  
-from modules.decision_tree import build_tree, predict  
+from modules.decision_tree import build_tree, predict
+from modules.decision_tree_features import extract_features
 from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH
 from modules.live_api import fetch_jsearch_jobs, map_live_to_local_format # Naya Import
 
@@ -416,45 +417,109 @@ else:
     # 5. DECISION TREE
     # ==========================================
     elif menu == "Decision Tree":
-        st.markdown("<p style='color: #6b7280; font-size: 16px; margin-top: -10px;'>Train a tree and trace the decision path</p><br>", unsafe_allow_html=True)
-        
-        if 'job_level' not in df.columns:
-            st.error("Dataset mein 'job_level' column nahi hai. Please run prepare_data.py first.")
-        else:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1: st.text_input("Target label", "job_level", disabled=True)
-            with col2: st.text_input("Split criterion", "Gini impurity", disabled=True)
-            with col3: depth = st.number_input("Max depth", min_value=1, max_value=10, value=3)
-            with col4: st.text_input("Min samples", "20", disabled=True)
-            
-            test_salary = st.number_input("Enter Salary to Predict Job Level:", min_value=30000, max_value=300000, value=95000, step=5000)
-            
-            if st.button("Train & Predict"):
-                X = df[['salary']].values
-                y = df['job_level'].values
-                tree = build_tree(X, y, max_depth=depth)
-                prediction = predict(tree, [test_salary])
-                
+        st.caption("Predict job seniority using salary and job-title features")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            job_title = st.text_input(
+                "Job title",
+                value="Senior Python Developer"
+            )
+
+        with col2:
+            test_salary = st.number_input(
+                "Annual salary (USD)",
+                min_value=1,
+                max_value=1000000,
+                value=95000,
+                step=5000
+            )
+
+        depth = st.slider("Maximum tree depth", 1, 10, 3)
+
+        if st.button("Train & Predict"):
+            training_df = df.copy()
+
+            training_df["salary"] = pd.to_numeric(
+                training_df["salary"], errors="coerce"
+            )
+
+            training_df = training_df[
+                training_df["job_level"].notna()
+                & np.isfinite(training_df["salary"])
+                & (training_df["salary"] > 0)
+            ].copy()
+
+            if len(training_df) < 2:
+                st.error("Not enough valid training records.")
+            else:
+                q1 = training_df["salary"].quantile(0.25)
+                q3 = training_df["salary"].quantile(0.75)
+                iqr = q3 - q1
+
+                training_df = training_df[
+                    training_df["salary"].between(
+                        q1 - 1.5 * iqr,
+                        q3 + 1.5 * iqr
+                    )
+                ].copy()
+
+                features = extract_features(training_df)
+                X = features.to_numpy()
+                y = training_df["job_level"].to_numpy()
+
+                with st.spinner("Training Decision Tree..."):
+                    tree = build_tree(X, y, max_depth=depth)
+
+                sample = pd.DataFrame({
+                    "job_title": [job_title],
+                    "salary": [test_salary]
+                })
+
+                sample_features = extract_features(sample)
+                sample_features = sample_features[features.columns]
+                sample_values = sample_features.iloc[0].to_numpy()
+
+                prediction = predict(tree, sample_values)
+
+                st.success(f"Predicted job level: {prediction}")
+                st.caption(
+                    f"Trained on {len(training_df):,} records "
+                    f"using {X.shape[1]} features"
+                )
+
                 col_tree, col_pred = st.columns([2, 1])
-                
+
                 with col_tree:
-                    st.markdown('<div class="chart-box"><h4>Tree structure & decision path</h4>', unsafe_allow_html=True)
+                    st.subheader("Decision path")
+
                     current_node = tree
-                    path_text = ""
+
                     while current_node.value is None:
-                        if test_salary <= current_node.threshold:
-                            path_text += f"Salary <= {current_node.threshold:,.0f} → Go Left<br>"
+                        feature_idx = current_node.feature
+                        feature_name = features.columns[feature_idx]
+                        threshold = current_node.threshold
+                        value = sample_values[feature_idx]
+
+                        if value <= threshold:
+                            st.write(
+                                f"{feature_name}: {value:,.0f} "
+                                f"≤ {threshold:,.0f} → Left"
+                            )
                             current_node = current_node.left
                         else:
-                            path_text += f"Salary > {current_node.threshold:,.0f} → Go Right<br>"
+                            st.write(
+                                f"{feature_name}: {value:,.0f} "
+                                f"> {threshold:,.0f} → Right"
+                            )
                             current_node = current_node.right
-                    st.markdown(f"<p style='font-family: monospace; font-size: 16px;'>{path_text}</p>", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
+
+                    st.write(f"Leaf prediction: **{current_node.value}**")
+
                 with col_pred:
-                    st.markdown('<div class="chart-box"><h4>Prediction</h4>', unsafe_allow_html=True)
-                    st.markdown(f"<h2 style='color:#00796b;'>{prediction}</h2>", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    st.subheader("Prediction")
+                    st.metric("Job level", prediction)
 
     # ==========================================
     # 6. CAREER PATH FINDER
