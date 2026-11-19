@@ -115,6 +115,19 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
+    /* Improve widget label and helper-text contrast */
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stCheckbox"] label p,
+    [data-testid="stCaptionContainer"] p {
+        color: #374151 !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="stWidgetLabel"] {
+        color: #374151 !important;
+        opacity: 1 !important;
+    }
+
     /* FIX STREAMLIT WIDGETS (INPUTS, DROPDOWNS, BUTTONS) */
     div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
         background-color: white !important;
@@ -253,147 +266,73 @@ else:
                 st.metric("IQR Outliers", len(outliers_iqr))
 
             col_chart1, col_chart2 = st.columns([1.5, 1])
+
             with col_chart1:
-                st.markdown('<div class="chart-box"><h4>Salary distribution</h4>', unsafe_allow_html=True)
-                fig, ax = plt.subplots(figsize=(8, 4))
-                fig.patch.set_facecolor('white')
-
-                valid_salaries = pd.to_numeric(df['salary'], errors='coerce')
-                valid_salaries = valid_salaries[
-                    np.isfinite(valid_salaries) & (valid_salaries > 0)
-                ]
-
-                # Limit the visualization to the 99th percentile
-                # Outlier detection still uses all valid salaries
-                salary_limit = valid_salaries.quantile(0.99)
-                display_salaries = valid_salaries[
-                    valid_salaries <= salary_limit
-                ]
-
-                ax.hist(
-                    display_salaries,
-                    bins=30,
-                    color='#00796b',
-                    edgecolor='white'
-                )
-                ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
-                ax.tick_params(colors='#374151')
-                ax.set_xlabel("Salary (USD / year)", color='#374151')
-                st.pyplot(fig)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            with col_chart2:
-                st.markdown('<div class="chart-box"><h4>Quartiles and fences</h4>', unsafe_allow_html=True)
-                q_df = pd.DataFrame({
-                    "Statistic": ["Q1", "Median", "Q3", "IQR", "Lower fence", "Upper fence"],
-                    "Value": [f"${stats_iqr['Q1']:,.0f}", f"${stats_iqr['Median']:,.0f}", f"${stats_iqr['Q3']:,.0f}", 
-                              f"${stats_iqr['IQR']:,.0f}", f"${stats_iqr['Lower Fence']:,.0f}", f"${stats_iqr['Upper Fence']:,.0f}"]
-                })
-                st.dataframe(q_df, hide_index=True, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            st.markdown("#### Z-score Outliers")
-
-            if not outliers_z.empty:
-                st.dataframe(
-                    outliers_z[['job_title', 'salary', 'z_score']]
-                    .head(10)
-                    .rename(columns={
-                        'job_title': 'Job',
-                        'salary': 'Salary',
-                        'z_score': 'Z-score'
-                    }),
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.success("No Z-score outliers detected.")
-
-            st.markdown("#### IQR Outliers")
-
-            if not outliers_iqr.empty:
-                st.dataframe(
-                    outliers_iqr[['job_title', 'salary']]
-                    .head(10)
-                    .rename(columns={
-                        'job_title': 'Job',
-                        'salary': 'Salary'
-                    }),
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.success("No IQR outliers detected.")
-
-    # ==========================================
-    # 3. KNN RECOMMENDATIONS
-    # ==========================================
-    elif menu == "KNN Recommendations":
-        st.caption("Find the K nearest postings and predict a job level")
-
-        col_left, col_right = st.columns([1, 2])
-
-        with col_left:
-            with st.container(border=True):
-                st.subheader("Query profile")
-                query_salary = st.number_input(
-                    "Expected salary ($)",
-                    min_value=10000,
-                    max_value=500000,
-                    value=75000,
-                    step=5000
-                )
-                k_value = st.slider(
-                    "K (neighbours)", min_value=1, max_value=10, value=5
-                )
-                run_knn = st.button("Run KNN")
-
-        with col_right:
-            if run_knn:
-                nearest_df = get_knn_recommendations(
-                    df, query_salary, k=k_value
-                )
-
                 with st.container(border=True):
-                    st.subheader(f"{len(nearest_df)} nearest postings")
+                    st.subheader("Cluster plot")
 
-                    if nearest_df.empty:
-                        st.warning("No jobs with valid salaries available.")
-                    else:
-                        display_df = nearest_df[
-                            ["job_title", "company", "salary", "distance"]
-                        ].reset_index(drop=True)
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    fig.patch.set_facecolor("white")
 
-                        display_df.index = display_df.index + 1
-                        display_df.columns = [
-                            "Job title", "Company", "Salary", "Distance"
-                        ]
-                        st.dataframe(
-                            display_df, use_container_width=True
-                        )
-
-                with st.container(border=True):
-                    st.subheader("Predicted level (majority vote)")
-
-                    labeled_df = df[
-                        df["job_level"].notna()
-                        & df["job_level"].astype(str).str.strip().ne("")
+                    colors = [
+                        "#00796b", "#d97706", "#4f46e5",
+                        "#be123c", "#10b981"
                     ]
 
-                    labeled_neighbors = get_knn_recommendations(
-                        labeled_df, query_salary, k=k_value
+                    for i in sorted(clustered_df["cluster"].unique()):
+                        cluster_data = clustered_df[
+                            clustered_df["cluster"] == i
+                        ]
+
+                        ax.scatter(
+                            cluster_data.index,
+                            cluster_data["salary"],
+                            c=colors[i % len(colors)],
+                            label=f"Cluster {i}",
+                            alpha=0.5,
+                            s=8
+                        )
+
+                    for i, centroid in enumerate(centroids):
+                        ax.axhline(
+                            y=centroid[0],
+                            color=colors[i % len(colors)],
+                            linestyle="--",
+                            linewidth=2,
+                            label=f"Centroid {i}: ${centroid[0]:,.0f}"
+                        )
+
+                    ax.spines["top"].set_visible(False)
+                    ax.spines["right"].set_visible(False)
+                    ax.set_xlabel("Job Index")
+                    ax.set_ylabel("Annual Salary (USD)")
+                    ax.legend(fontsize=8)
+
+                    st.pyplot(fig)
+                    plt.close(fig)
+
+            with col_chart2:
+                with st.container(border=True):
+                    st.subheader("Centroids and sizes")
+
+                    summary = (
+                        clustered_df.groupby("cluster")["salary"]
+                        .agg(["count", "mean"])
+                        .reset_index()
                     )
 
-                    predicted_level = predict_job_level(labeled_neighbors)
+                    summary.columns = [
+                        "Cluster", "Size", "Avg Salary"
+                    ]
 
-                    if predicted_level is not None:
-                        st.success(f"Predicted job level: {predicted_level}")
-                    else:
-                        st.warning("No labeled neighbors available.")
+                    summary["Avg Salary"] = summary[
+                        "Avg Salary"
+                    ].apply(lambda x: f"${x:,.0f}")
 
-                    st.caption(
-                        f"{len(labeled_neighbors)} labeled neighbours · "
-                        "Salary Z-score standardized · Euclidean distance"
+                    st.dataframe(
+                        summary,
+                        hide_index=True,
+                        use_container_width=True
                     )
 
     # ==========================================
@@ -408,12 +347,46 @@ else:
         with col3: k_clusters = st.number_input("K (clusters)", min_value=2, max_value=8, value=3)
         with col4: st.text_input("Max iterations", "100", disabled=True)
         
+        apply_iqr = st.checkbox(
+            "Exclude salary outliers using IQR",
+            value=True
+        )
+
         if st.button("Run K-Means"):
-            clustered_df, centroids = run_kmeans(df, column='salary', k=k_clusters)
+            clustering_df = df.copy()
+
+            if apply_iqr:
+                salaries = pd.to_numeric(
+                    clustering_df["salary"], errors="coerce"
+                )
+                valid = salaries[
+                    np.isfinite(salaries) & (salaries > 0)
+                ]
+
+                if not valid.empty:
+                    q1 = valid.quantile(0.25)
+                    q3 = valid.quantile(0.75)
+                    iqr = q3 - q1
+
+                    lower = q1 - 1.5 * iqr
+                    upper = q3 + 1.5 * iqr
+
+                    clustering_df = clustering_df[
+                        (salaries >= lower) & (salaries <= upper)
+                    ].copy()
+
+            clustered_df, centroids = run_kmeans(
+                clustering_df, column="salary", k=k_clusters
+            )
+
+            st.caption(
+                f"Clustered {len(clustered_df):,} postings · "
+                f"IQR filtering {'enabled' if apply_iqr else 'disabled'}"
+            )
             
             col_chart1, col_chart2 = st.columns([1.5, 1])
             with col_chart1:
-                st.markdown('<div class="chart-box"><h4>Cluster plot</h4>', unsafe_allow_html=True)
+                st.subheader("Cluster plot")
                 fig, ax = plt.subplots(figsize=(8, 5))
                 fig.patch.set_facecolor('white')
                 colors = ['#00796b', '#d97706', '#4f46e5', '#be123c', '#10b981']
@@ -427,19 +400,18 @@ else:
                 
                 ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
                 ax.set_xlabel("Job Index", color='#374151')
-                ax.set_ylabel("Salary (k USD)", color='#374151')
+                ax.set_ylabel("Annual Salary (USD)", color='#374151')
                 ax.legend()
                 st.pyplot(fig)
-                st.markdown('</div>', unsafe_allow_html=True)
                 
             with col_chart2:
-                st.markdown('<div class="chart-box"><h4>Centroids and sizes</h4>', unsafe_allow_html=True)
+                st.subheader("Centroids and sizes")
                 summary = clustered_df.groupby('cluster')['salary'].agg(['count', 'mean']).reset_index()
                 summary.columns = ['Cluster', 'Size', 'Avg Salary']
                 summary['Avg Salary'] = summary['Avg Salary'].apply(lambda x: f"${x:,.0f}")
                 st.dataframe(summary, hide_index=True, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
 
+    # ==========================================
     # ==========================================
     # 5. DECISION TREE
     # ==========================================
