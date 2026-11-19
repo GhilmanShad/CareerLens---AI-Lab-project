@@ -15,6 +15,39 @@ from modules.decision_tree import build_tree, predict
 from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH
 from modules.live_api import fetch_jsearch_jobs, map_live_to_local_format # Naya Import
 
+@st.cache_data(show_spinner="Analyzing job skills...")
+def calculate_skill_demand(descriptions):
+    skills = [
+        'Python', 'SQL', 'Excel',
+        'Pandas', 'Machine Learning', 'Statistics'
+    ]
+
+    descriptions = descriptions.fillna('').astype(str)
+
+    counts = [
+        int(descriptions.str.contains(
+            rf'\b{skill}\b',
+            case=False,
+            regex=True,
+            na=False
+        ).sum())
+        for skill in skills
+    ]
+
+    total = len(descriptions)
+
+    demands = [
+        round(count / total * 100, 1) if total else 0
+        for count in counts
+    ]
+
+    top_skill = (
+        skills[counts.index(max(counts))]
+        if any(counts) else "N/A"
+    )
+
+    return skills, demands, top_skill
+
 # Page configuration
 st.set_page_config(page_title="CareerLens", page_icon="📊", layout="wide")
 
@@ -155,9 +188,18 @@ else:
     if menu == "Market Overview":
         st.markdown("<p style='color: #6b7280; font-size: 16px; margin-top: -10px;'>Dataset summary, top skills and job titles</p><br>", unsafe_allow_html=True)
         
+                # Calculate skill demand using the full dataset
+        skills, demands, top_skill = calculate_skill_demand(
+            df['description']
+        )
         col1, col2, col3, col4 = st.columns(4)
         with col1: st.markdown(f'<div class="custom-card"><h4>Jobs analysed</h4><h2>{df.shape[0]:,}</h2></div>', unsafe_allow_html=True)
-        with col2: st.markdown('<div class="custom-card"><h4>Top skill</h4><h2>Python</h2></div>', unsafe_allow_html=True)
+        with col2:
+            st.markdown(
+                f'<div class="custom-card"><h4>Top tracked skill</h4>'
+                f'<h2>{top_skill}</h2></div>',
+                unsafe_allow_html=True
+            )
         with col3: st.markdown(f'<div class="custom-card"><h4>Median salary</h4><h2>${df["salary"].median():,.0f}</h2></div>', unsafe_allow_html=True)
         with col4: st.markdown(f'<div class="custom-card"><h4>Job categories</h4><h2>{df["job_title"].nunique()}</h2></div>', unsafe_allow_html=True)
             
@@ -166,8 +208,6 @@ else:
         col_chart1, col_chart2 = st.columns([1.5, 1])
         with col_chart1:
             st.markdown('<div class="chart-box"><h4>Skill demand (% of postings)</h4>', unsafe_allow_html=True)
-            skills = ['Python', 'SQL', 'Excel', 'Pandas', 'Machine Learning', 'Statistics']
-            demands = [92, 81, 66, 58, 47, 41]
             fig1, ax1 = plt.subplots(figsize=(8, 4))
             fig1.patch.set_facecolor('white')
             ax1.barh(skills[::-1], demands[::-1], color='#00796b', height=0.6)
