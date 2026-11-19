@@ -9,7 +9,7 @@ import os
 from modules.data_loader import load_and_inspect_data
 from modules.preprocessing import clean_data
 from modules.outlier_detection import detect_zscore_outliers, detect_iqr_outliers
-from modules.knn import get_knn_recommendations
+from modules.knn import get_knn_recommendations, predict_job_level
 from modules.kmeans import run_kmeans  
 from modules.decision_tree import build_tree, predict  
 from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH
@@ -329,32 +329,72 @@ else:
     # 3. KNN RECOMMENDATIONS
     # ==========================================
     elif menu == "KNN Recommendations":
-        st.markdown("<p style='color: #6b7280; font-size: 16px; margin-top: -10px;'>Find the K most similar postings and predict a level</p><br>", unsafe_allow_html=True)
-        
+        st.caption("Find the K nearest postings and predict a job level")
+
         col_left, col_right = st.columns([1, 2])
-        
+
         with col_left:
-            st.markdown('<div class="chart-box"><h4>Query profile</h4>', unsafe_allow_html=True)
-            query_salary = st.number_input("Expected salary ($)", min_value=10000, max_value=500000, value=75000, step=5000)
-            k_value = st.slider("K (neighbours)", min_value=1, max_value=10, value=5)
-            run_knn = st.button("Run KNN")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
+            with st.container(border=True):
+                st.subheader("Query profile")
+                query_salary = st.number_input(
+                    "Expected salary ($)",
+                    min_value=10000,
+                    max_value=500000,
+                    value=75000,
+                    step=5000
+                )
+                k_value = st.slider(
+                    "K (neighbours)", min_value=1, max_value=10, value=5
+                )
+                run_knn = st.button("Run KNN")
+
         with col_right:
             if run_knn:
-                nearest_df = get_knn_recommendations(df, query_salary, k=k_value)
-                
-                st.markdown(f'<div class="chart-box"><h4>{k_value} nearest postings</h4>', unsafe_allow_html=True)
-                display_df = nearest_df[['job_title', 'company', 'salary', 'distance']].reset_index(drop=True)
-                display_df.index = display_df.index + 1
-                display_df.columns = ['Job title', 'Company', 'Salary', 'Distance']
-                st.dataframe(display_df, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                st.markdown('<div class="chart-box"><h4>Predicted level (majority vote)</h4>', unsafe_allow_html=True)
-                st.markdown(f"<h2 style='color:#00796b; margin-bottom:0;'>Mid-level</h2>", unsafe_allow_html=True)
-                st.markdown(f"<p style='color:gray; font-size:14px;'>{k_value} neighbours · features min-max scaled · Euclidean distance</p>", unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                nearest_df = get_knn_recommendations(
+                    df, query_salary, k=k_value
+                )
+
+                with st.container(border=True):
+                    st.subheader(f"{len(nearest_df)} nearest postings")
+
+                    if nearest_df.empty:
+                        st.warning("No jobs with valid salaries available.")
+                    else:
+                        display_df = nearest_df[
+                            ["job_title", "company", "salary", "distance"]
+                        ].reset_index(drop=True)
+
+                        display_df.index = display_df.index + 1
+                        display_df.columns = [
+                            "Job title", "Company", "Salary", "Distance"
+                        ]
+                        st.dataframe(
+                            display_df, use_container_width=True
+                        )
+
+                with st.container(border=True):
+                    st.subheader("Predicted level (majority vote)")
+
+                    labeled_df = df[
+                        df["job_level"].notna()
+                        & df["job_level"].astype(str).str.strip().ne("")
+                    ]
+
+                    labeled_neighbors = get_knn_recommendations(
+                        labeled_df, query_salary, k=k_value
+                    )
+
+                    predicted_level = predict_job_level(labeled_neighbors)
+
+                    if predicted_level is not None:
+                        st.success(f"Predicted job level: {predicted_level}")
+                    else:
+                        st.warning("No labeled neighbors available.")
+
+                    st.caption(
+                        f"{len(labeled_neighbors)} labeled neighbours · "
+                        "Salary Z-score standardized · Euclidean distance"
+                    )
 
     # ==========================================
     # 4. K-MEANS CLUSTERING
