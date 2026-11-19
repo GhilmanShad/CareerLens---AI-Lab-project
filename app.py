@@ -13,7 +13,7 @@ from modules.knn import get_knn_recommendations, predict_job_level
 from modules.kmeans import run_kmeans  
 from modules.decision_tree import build_tree, predict
 from modules.decision_tree_features import extract_features
-from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH
+from modules.graph_search import bfs, dfs, a_star, CAREER_GRAPH, calculate_path_cost
 from modules.live_api import fetch_jsearch_jobs, map_live_to_local_format # Naya Import
 
 @st.cache_data(show_spinner="Analyzing job skills...")
@@ -547,9 +547,45 @@ else:
             
             pos = nx.spring_layout(G, k=1.5, seed=42)
             
-            nx.draw_networkx_nodes(G, pos, node_size=8000, node_color='#00796b', ax=ax)
-            nx.draw_networkx_labels(G, pos, font_color='white', font_size=9, font_weight='bold', ax=ax)
-            nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20, edge_color='#9ca3af', width=2, ax=ax)
+            nx.draw_networkx_nodes(G, pos, node_size=3500, node_color='#00796b', ax=ax)
+            node_labels = {
+                "Machine Learning": "Machine\nLearning",
+                "Data Scientist": "Data\nScientist",
+                "Visualization": "Visualization",
+            }
+
+            labels = {node: node_labels.get(node, node) for node in G.nodes()}
+
+            nx.draw_networkx_labels(
+                G, pos,
+                labels=labels,
+                font_color='white',
+                font_size=8,
+                font_weight='bold',
+                ax=ax
+            )
+            a_path, a_cost = a_star(CAREER_GRAPH, start_node, goal_node)
+
+            highlighted_edges = set(zip(a_path, a_path[1:])) if a_path else set()
+
+            edge_colors = [
+                '#ef4444' if edge in highlighted_edges else '#9ca3af'
+                for edge in G.edges()
+            ]
+
+            edge_widths = [
+                4 if edge in highlighted_edges else 2
+                for edge in G.edges()
+            ]
+
+            nx.draw_networkx_edges(
+                G, pos,
+                arrowstyle='->',
+                arrowsize=20,
+                edge_color=edge_colors,
+                width=edge_widths,
+                ax=ax
+            )
             
             ax.axis('off')
             st.pyplot(fig)
@@ -564,7 +600,7 @@ else:
                 "Algorithm": ["BFS", "DFS", "A*"],
                 "Path": [" → ".join(bfs_path) if bfs_path else "None", " → ".join(dfs_path) if dfs_path else "None", " → ".join(a_path) if a_path else "None"],
                 "Edges": [len(bfs_path)-1 if bfs_path else 0, len(dfs_path)-1 if dfs_path else 0, len(a_path)-1 if a_path else 0],
-                "Cost": [f"{bfs_cost*40} h" if bfs_cost else "N/A", f"{dfs_cost*40} h" if dfs_cost else "N/A", f"{a_cost*40} h" if a_cost else "N/A"]
+                "Cost": [f"{calculate_path_cost(CAREER_GRAPH, path)*40} h" if path else "N/A" for path in (bfs_path, dfs_path, a_path)]
             })
             st.dataframe(algo_df, hide_index=True, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
