@@ -266,75 +266,113 @@ else:
             with col_metric3:
                 st.metric("IQR Outliers", len(outliers_iqr))
 
-            col_chart1, col_chart2 = st.columns([1.5, 1])
+            # Salary distribution and IQR outlier boundaries
+            valid_salaries = pd.to_numeric(
+                df["salary"], errors="coerce"
+            )
+            valid_salaries = valid_salaries[
+                np.isfinite(valid_salaries) & (valid_salaries > 0)
+            ]
 
-            with col_chart1:
-                with st.container(border=True):
-                    st.subheader("Cluster plot")
+            if not valid_salaries.empty and stats_iqr:
+                st.subheader("Salary Distribution & IQR Boundaries")
 
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    fig.patch.set_facecolor("white")
+                fig, ax = plt.subplots(figsize=(10, 4))
+                # Limit the chart range to improve readability.
+                # Outlier calculations still use all valid salaries.
+                display_limit = valid_salaries.quantile(0.99)
+                display_salaries = valid_salaries[
+                    valid_salaries <= display_limit
+                ]
 
-                    colors = [
-                        "#00796b", "#d97706", "#4f46e5",
-                        "#be123c", "#10b981"
-                    ]
+                ax.hist(
+                    display_salaries,
+                    bins=50,
+                    color="#00796b",
+                    alpha=0.75,
+                    edgecolor="white"
+                )
+                ax.set_xlim(0, display_limit)
 
-                    for i in sorted(clustered_df["cluster"].unique()):
-                        cluster_data = clustered_df[
-                            clustered_df["cluster"] == i
-                        ]
+                ax.axvline(
+                    stats_iqr["Lower Fence"],
+                    color="#d97706",
+                    linestyle="--",
+                    label="IQR Lower Fence"
+                )
+                ax.axvline(
+                    stats_iqr["Upper Fence"],
+                    color="#be123c",
+                    linestyle="--",
+                    label="IQR Upper Fence"
+                )
 
-                        ax.scatter(
-                            cluster_data.index,
-                            cluster_data["salary"],
-                            c=colors[i % len(colors)],
-                            label=f"Cluster {i}",
-                            alpha=0.5,
-                            s=8
-                        )
+                ax.set_xlabel("Annual Salary (USD)")
+                ax.set_ylabel("Number of Job Postings")
+                ax.legend()
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
 
-                    for i, centroid in enumerate(centroids):
-                        ax.axhline(
-                            y=centroid[0],
-                            color=colors[i % len(colors)],
-                            linestyle="--",
-                            linewidth=2,
-                            label=f"Centroid {i}: ${centroid[0]:,.0f}"
-                        )
+                st.pyplot(fig)
+                plt.close(fig)
 
-                    ax.spines["top"].set_visible(False)
-                    ax.spines["right"].set_visible(False)
-                    ax.set_xlabel("Job Index")
-                    ax.set_ylabel("Annual Salary (USD)")
-                    ax.legend(fontsize=8)
 
-                    st.pyplot(fig)
-                    plt.close(fig)
 
-            with col_chart2:
-                with st.container(border=True):
-                    st.subheader("Centroids and sizes")
+    # ==========================================
+    # 3. KNN RECOMMENDATIONS
+    # ==========================================
+    elif menu == "KNN Recommendations":
+        st.caption("Find job postings with salaries closest to your target.")
 
-                    summary = (
-                        clustered_df.groupby("cluster")["salary"]
-                        .agg(["count", "mean"])
-                        .reset_index()
-                    )
+        col1, col2 = st.columns(2)
 
-                    summary.columns = [
-                        "Cluster", "Size", "Avg Salary"
-                    ]
+        with col1:
+            target_salary = st.number_input(
+                "Target Annual Salary (USD)",
+                min_value=1,
+                value=80000,
+                step=5000
+            )
 
-                    summary["Avg Salary"] = summary[
-                        "Avg Salary"
-                    ].apply(lambda x: f"${x:,.0f}")
+        with col2:
+            k_neighbors = st.number_input(
+                "Number of Neighbors (K)",
+                min_value=1,
+                max_value=20,
+                value=5,
+                step=1
+            )
 
-                    st.dataframe(
-                        summary,
-                        hide_index=True,
-                        use_container_width=True
-                    )
+        if st.button("Find Recommendations"):
+            nearest_jobs = get_knn_recommendations(
+                df, target_salary, k=int(k_neighbors)
+            )
+
+            if nearest_jobs.empty:
+                st.warning("No matching jobs with valid salaries were found.")
+            else:
+                predicted_level = predict_job_level(nearest_jobs)
+
+                st.success(
+                    f"Found {len(nearest_jobs)} nearest job postings."
+                )
+
+                if predicted_level is not None:
+                    st.metric("Predicted Job Level", predicted_level)
+                else:
+                    st.info("Job level unavailable for these recommendations.")
+
+                display_columns = [
+                    col for col in
+                    ["job_title", "company", "salary", "job_level", "distance"]
+                    if col in nearest_jobs.columns
+                ]
+
+                st.dataframe(
+                    nearest_jobs[display_columns],
+                    hide_index=True,
+                    use_container_width=True
+                )
 
     # ==========================================
     # 4. K-MEANS CLUSTERING
